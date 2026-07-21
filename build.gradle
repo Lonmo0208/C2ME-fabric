@@ -359,28 +359,24 @@ dependencies {
 }
 
 String getVersionSuffix() {
-    try {
-        def stdout = providers.exec {
-            commandLine 'git', 'describe', '--tags', '--dirty', '--broken'
-        }.standardOutput.asText.get()
-        stdout = stdout.toString().strip()
-        def suffix = ""
-        if (stdout.endsWith("-dirty")) {
-            stdout = stdout.substring(0, stdout.length() - "-dirty".length())
-            suffix = "-dirty"
-        }
-        if (stdout.endsWith("-broken")) {
-            stdout = stdout.substring(0, stdout.length() - "-broken".length())
-            suffix = "-broken"
-        }
-        if (stdout.indexOf('-') < 0) {
-            return "0" + suffix;
-        }
-        def split = stdout.split('-')
-        return split[split.length - 2] + suffix
-    } catch (Exception e) {
-        return "0"
+    def stdout = providers.exec {
+        commandLine 'git', 'describe', '--tags', '--dirty', '--broken'
+    }.standardOutput.asText.get()
+    stdout = stdout.toString().strip()
+    def suffix = ""
+    if (stdout.endsWith("-dirty")) {
+        stdout = stdout.substring(0, stdout.length() - "-dirty".length())
+        suffix = "-dirty"
     }
+    if (stdout.endsWith("-broken")) {
+        stdout = stdout.substring(0, stdout.length() - "-broken".length())
+        suffix = "-broken"
+    }
+    if (stdout.indexOf('-') < 0) {
+        return "0" + suffix;
+    }
+    def split = stdout.split('-')
+    return split[split.length - 2] + suffix
 }
 
 jmhJar {

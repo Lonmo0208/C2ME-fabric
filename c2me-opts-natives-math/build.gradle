@@ -1,20 +1,8 @@
+apply plugin: 'io.github.tomtzook.gradle-cmake'
+
 moduleDependencies(project, [
         "c2me-base",
 ])
-
-jar {
-    manifest {
-        attributes([
-                "MixinConfigs": "c2me-opts-natives-math.mixins.json"
-        ])
-    }
-}
-
-// Native build disabled - requires Clang/lld/LLVM toolchain with MinGW environment
-// To enable native optimizations: install LLVM (with clang, lld, llvm-config) + MinGW-w64
-// and uncomment the cmake configuration below
-/*
-apply plugin: 'io.github.tomtzook.gradle-cmake'
 
 def addTarget(String target, String outputName) {
     addTarget(target, outputName, outputName)
@@ -57,4 +45,3 @@ tasks.withType(com.github.tomtzook.gcmake.tasks.MakeBuildTask).configureEach {
 
 clean.dependsOn tasks.cmakeClean
 processResources.dependsOn tasks.cmakeBuild
-*/
