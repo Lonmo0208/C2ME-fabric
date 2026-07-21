@@ -104,6 +104,11 @@ public class CLDataUtil {
                 }
             } else if (key == OpenCLCGen.MARKER_cacheLike_cache2d) {
                 allocatedOffsets[index] = new OffsetAndData(0, null); // no interpolator
+            } else if (key == OpenCLCGen.MARKER_delegate_flatCache) {
+                int offset = roundUp(currentTail, 8);
+                int bufSize = generatedCLSource.getDelegateFlatCachePrefills() * MathHelper.square(chunkSize * 4 + 1) * 8;
+                currentTail = offset + bufSize;
+                allocatedOffsets[index] = new OffsetAndData(offset, null);
             } else {
                 throw new UnsupportedOperationException("Unsupported key type " + key.getClass().getName());
             }
@@ -301,6 +306,11 @@ public class CLDataUtil {
             } else if (key == OpenCLCGen.MARKER_cacheLike_cache2d) {
                 int offset = roundUp(currentTail, 8);
                 currentTail = offset + generatedCLSource.getCache2dPrefills() * MathHelper.square(horizontalChunkSize * 16) * 8;
+                allocatedOffsets[index] = new OffsetAndData(offset, null);
+            } else if (key == OpenCLCGen.MARKER_delegate_flatCache) {
+                int offset = roundUp(currentTail, 8);
+                int bufSize = generatedCLSource.getDelegateFlatCachePrefills() * MathHelper.square(horizontalChunkSize * 4 + 1) * 8;
+                currentTail = offset + bufSize;
                 allocatedOffsets[index] = new OffsetAndData(offset, null);
             } else {
                 throw new UnsupportedOperationException("Unsupported key type " + key.getClass().getName());

@@ -26,6 +26,7 @@ package com.ishland.c2me.opts.dfc.common.gen.opencl;
 
 import com.ishland.c2me.opts.dfc.common.ast.AstNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CacheLikeNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.DelegateNode;
 import com.ishland.c2me.opts.dfc.common.gen.meta.ValuesMethodDefD;
 import net.minecraft.util.math.Spline;
 import net.minecraft.world.gen.densityfunction.DensityFunctionTypes;
@@ -61,6 +62,8 @@ public interface OpenCLCGenContext {
     int registerCache2d(CacheLikeNode node);
 
     int registerInterpolator(CacheLikeNode node);
+
+    int registerDelegateFlatCache(DelegateNode node);
 
     void appendRaw(String raw);
 }

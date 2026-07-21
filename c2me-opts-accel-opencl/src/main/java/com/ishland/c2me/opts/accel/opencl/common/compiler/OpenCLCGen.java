@@ -708,13 +708,24 @@ public class OpenCLCGen {
         }
     }
 
+    public static byte[] bytes(int[] ints) {
+        byte[] bytes = new byte[ints.length * Integer.BYTES];
+        MemorySegment.copy(MemorySegment.ofArray(ints), ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
+        return bytes;
+    }
+
+    public static byte[] bytes(float[] floats) {
+        byte[] bytes = new byte[floats.length * Float.BYTES];
+        MemorySegment.copy(MemorySegment.ofArray(floats), ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
+        return bytes;
+    }
+
     public static byte[] bytes(PerlinNoiseSampler sampler) {
         try (Arena arena = Arena.ofConfined()) {
             byte[] perm = ((IPerlinNoiseSampler) (Object) sampler).getPermutation();
             int firstOctave;
             double[] ampArray;
             try {
-                // Access private fields via reflection
                 var fOctave = PerlinNoiseSampler.class.getDeclaredField("firstOctave");
                 fOctave.setAccessible(true);
                 firstOctave = fOctave.getInt(sampler);
@@ -728,8 +739,7 @@ public class OpenCLCGen {
             }
             int octaveCount = ampArray.length;
 
-            // Layout: header (20 bytes) + permutation (256 bytes) + amplitudes (octaveCount * 8 bytes)
-            int headerSize = 20; // uint64_t(8) + int32_t(4) + int32_t(4) + int32_t(4)
+            int headerSize = 20;
             int permOffset = headerSize;
             int ampOffset = headerSize + 256;
             int totalSize = headerSize + 256 + octaveCount * 8;
@@ -774,14 +784,11 @@ public class OpenCLCGen {
 
             int octaveCount = amps.size();
 
-            // Count non-null noise levels
             int nonNullCount = 0;
             for (Object nl : noiseLevels) {
                 if (nl != null) nonNullCount++;
             }
 
-            // Layout: header (40 bytes) + permutations (nonNullCount * 256 bytes) + origins (nonNullCount * 3 * 8 bytes) + amplitudes (nonNullCount * 8 bytes)
-            // header: uint64_t octaveCount(8) + int32_t permutations_offset(4) + int32_t originX_offset(4) + int32_t originY_offset(4) + int32_t originZ_offset(4) + int32_t amplitudes_offset(4) + double lfvf(8) + double lfif(8)
             int headerSize = 48;
             int permOffset = headerSize;
             int permSize = nonNullCount * 256;
@@ -801,7 +808,6 @@ public class OpenCLCGen {
             memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, 32, lowestFreqValueFactor);
             memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, 40, lowestFreqInputFactor);
 
-            // ImprovedNoise fields: p (byte[256]), xo, yo, zo (double)
             var improvedNoiseCls = Class.forName("net.minecraft.world.level.levelgen.synth.ImprovedNoise");
             var fP = improvedNoiseCls.getDeclaredField("p");
             fP.setAccessible(true);
@@ -839,18 +845,6 @@ public class OpenCLCGen {
         } catch (Exception e) {
             throw new RuntimeException("Failed to serialize PerlinNoise", e);
         }
-    }
-
-    public static byte[] bytes(int[] ints) {
-        byte[] bytes = new byte[ints.length * Integer.BYTES];
-        MemorySegment.copy(MemorySegment.ofArray(ints), ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
-        return bytes;
-    }
-
-    public static byte[] bytes(float[] floats) {
-        byte[] bytes = new byte[floats.length * Float.BYTES];
-        MemorySegment.copy(MemorySegment.ofArray(floats), ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
-        return bytes;
     }
 
     public static byte[] bytesObject(Object object) {

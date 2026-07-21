@@ -43,6 +43,8 @@ public class MixinOpenCLGenContext {
                     original.getFlatCachePrefills(),
                     original.getCache2dPrefills(),
                     original.getInterpolatorPrefills(),
+                    original.getDelegateFlatCachePrefills(),
+                    original.getDelegateNodes(),
                     original.getDefines(),
                     original.getBiomeMappings(),
                     original.getDumpedPath()
