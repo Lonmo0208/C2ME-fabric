@@ -397,6 +397,85 @@ math_noise_perlin_double_octave_sample_global(global const double_octave_sampler
     return math_noise_perlin_double_octave_sample_impl_global(data, x, y, z, 0.0, 0.0, 0);
 }
 
+// Single octave perlin noise sampler (for Aether II PerlinNoiseFunction compat)
+typedef const struct single_perlin_sampler_data {
+    const uint64_t octaveCount;
+    const int32_t firstOctave;
+    const int32_t permutations; // offset to uint8_t[256]
+    const int32_t amplitudes;   // offset to double[octaveCount]
+} single_perlin_sampler_data_t;
+
+static __attribute__((pure)) double
+math_noise_perlin_single_sample_global(global const single_perlin_sampler_data_t * restrict const data,
+                                       const double x, const double y, const double z) {
+    global const uint8_t *permutations = ptr_shift_global(data, data->permutations);
+    global const double *amplitudes = ptr_shift_global(data, data->amplitudes);
+
+    double result = 0.0;
+    for (uint32_t i = 0; i < data->octaveCount; i++) {
+        double scale = pow(2.0, data->firstOctave + i);
+        double amp = amplitudes[i];
+        result += amp * math_noise_perlin_sample_global(
+            permutations,
+            0.0, 0.0, 0.0,
+            x * scale, y * scale, z * scale,
+            0.0, 0.0
+        );
+    }
+    return result;
+}
+
+// PerlinNoise (multi-octave with different permutations per octave)
+// Used by Aether II's PerlinNoiseFunction compat
+typedef const struct perlin_noise_data {
+    const uint64_t octaveCount;
+    const int32_t permutations;    // offset to uint8_t[octaveCount * 256], one permutation per octave
+    const int32_t originX;         // offset to double[octaveCount]
+    const int32_t originY;         // offset to double[octaveCount]
+    const int32_t originZ;         // offset to double[octaveCount]
+    const int32_t amplitudes;      // offset to double[octaveCount]
+    const double lowestFreqValueFactor;
+    const double lowestFreqInputFactor;
+} perlin_noise_data_t;
+
+static __attribute__((pure)) double
+math_noise_perlin_noise_global(global const perlin_noise_data_t * restrict const data,
+                                const double x, const double y, const double z) {
+    global const uint8_t *permutations = ptr_shift_global(data, data->permutations);
+    global const double *originX = ptr_shift_global(data, data->originX);
+    global const double *originY = ptr_shift_global(data, data->originY);
+    global const double *originZ = ptr_shift_global(data, data->originZ);
+    global const double *amplitudes = ptr_shift_global(data, data->amplitudes);
+
+    double result = 0.0;
+    double inputFactor = data->lowestFreqInputFactor;
+    double valueFactor = data->lowestFreqValueFactor;
+
+    for (uint32_t i = 0; i < data->octaveCount; i++) {
+        // wrap(x * inputFactor) = x * inputFactor - floor(x * inputFactor)
+        double wx = x * inputFactor;
+        wx = wx - math_floor(wx);
+        double wy = y * inputFactor;
+        wy = wy - math_floor(wy);
+        double wz = z * inputFactor;
+        wz = wz - math_floor(wz);
+
+        global const uint8_t *perm = permutations + 256 * i;
+        double g = math_noise_perlin_sample_global(
+            perm,
+            originX[i], originY[i], originZ[i],
+            wx, wy, wz,
+            0.0, 0.0
+        );
+        result += amplitudes[i] * valueFactor * g;
+
+        inputFactor *= 2.0;
+        valueFactor /= 2.0;
+    }
+
+    return result;
+}
+
 typedef const struct interpolated_noise_sub_sampler {
     const uint32_t length;
     const int32_t sampler_permutations;
@@ -2131,6 +2210,53 @@ math_biome_search_tree_calc(global const biome_search_tree_node_t * restrict con
 
 extern constant const uint32_t biome_multinoise_tree_offset;
 extern constant const uint32_t biome_multinoise_tree_nodes_c;
+
+// Twilight Forest custom density functions
+static __attribute__((const)) double math_focused_density(const int32_t x, const int32_t y, const int32_t z,
+                                                          const int32_t centerX, const int32_t bottomY, const int32_t centerZ,
+                                                          const double radius, const double nearValue, const double farValue) {
+    double dx = (double)(x - centerX) * 2.0;
+    double dy = (double)(y - bottomY);
+    double dz = (double)(z - centerZ) * 2.0;
+    double dist = sqrt(dx * dx + dy * dy + dz * dz);
+    return math_clampedMap(dist, 0.0, radius, nearValue, farValue);
+}
+
+static __attribute__((const)) double math_hollow_hill(const int32_t x, const int32_t y, const int32_t z,
+                                                       const int32_t centerX, const int32_t bottomY, const int32_t centerZ,
+                                                       const double radius, const double heightScale) {
+    double dx = (double)(x - centerX);
+    double dz = (double)(z - centerZ);
+    double dist = sqrt(dx * dx + dz * dz);
+    double cosVal = (cos(dist / radius * M_PI) + 1.0) / 2.0;
+    return cosVal * heightScale + (double)(y - bottomY);
+}
+
+static __attribute__((const)) double math_tanh_hill(const int32_t x, const int32_t y, const int32_t z,
+                                                     const int32_t centerX, const int32_t bottomY, const int32_t centerZ,
+                                                     const double radius, const double heightScale,
+                                                     const double cosAngleBiasDirection, const double sinAngleBiasDirection,
+                                                     const int32_t isXOriented, const int32_t isOnRightSide) {
+    double dx = (double)(x - centerX);
+    double dz = (double)(z - centerZ);
+    double rotX = isXOriented
+        ? (dx * cosAngleBiasDirection - dz * sinAngleBiasDirection)
+        : (dx * cosAngleBiasDirection + dz * sinAngleBiasDirection);
+    double normalizedDist = fabs(rotX) / radius;
+    double height = (tanh(normalizedDist * 2.0 - 0.5) * 0.5 + 0.5) * heightScale;
+    return isOnRightSide ? (height + (double)(y - bottomY)) : (-height + (double)(y - bottomY));
+}
+
+static __attribute__((const)) double math_box_density(const int32_t x, const int32_t y, const int32_t z,
+                                                       const int32_t minX, const int32_t minY, const int32_t minZ,
+                                                       const int32_t maxX, const int32_t maxY, const int32_t maxZ,
+                                                       const double minValue, const double maxValue, const double terrainAdjustment) {
+    double dx = max(0.0, max((double)(minX - x), (double)(x - maxX)));
+    double dy = max(0.0, max((double)(minY - y), (double)(y - maxY)));
+    double dz = max(0.0, max((double)(minZ - z), (double)(z - maxZ)));
+    double dist = sqrt(dx * dx + dy * dy + dz * dz);
+    return math_clampedMap(dist, 0.0, terrainAdjustment, maxValue, minValue);
+}
 
 #ifdef DF_COMPILE_BIOME_MULTINOISE_KERNEL
 // res_blocks: [relY][relZ][relX]

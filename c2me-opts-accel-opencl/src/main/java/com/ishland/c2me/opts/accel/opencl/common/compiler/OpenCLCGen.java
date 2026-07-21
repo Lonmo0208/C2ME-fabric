@@ -20,10 +20,12 @@ import com.ishland.c2me.base.common.util.MemoryUtil;
 import com.ishland.c2me.base.mixin.access.IDoublePerlinNoiseSampler;
 import com.ishland.c2me.base.mixin.access.IMultiNoiseBiomeSource;
 import com.ishland.c2me.base.mixin.access.IMultiNoiseUtilEntries;
+import com.ishland.c2me.base.mixin.access.IPerlinNoiseSampler;
 import com.ishland.c2me.opts.dfc.common.ast.AstNode;
 import com.ishland.c2me.opts.dfc.common.ast.McToAst;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CacheLikeNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.ConstantNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.DelegateNode;
 import com.ishland.c2me.opts.dfc.common.ast.opto.OptoPasses;
 import com.ishland.c2me.opts.dfc.common.gen.GenDumper;
 import com.ishland.c2me.opts.dfc.common.gen.meta.ValuesMethodDefD;
@@ -41,6 +43,7 @@ import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.util.math.Spline;
 import net.minecraft.util.math.noise.DoublePerlinNoiseSampler;
 import net.minecraft.util.math.noise.InterpolatedNoiseSampler;
+import net.minecraft.util.math.noise.PerlinNoiseSampler;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.source.BiomeSource;
 import net.minecraft.world.biome.source.MultiNoiseBiomeSource;
@@ -74,6 +77,7 @@ public class OpenCLCGen {
     public static final Object MARKER_cacheLike_interpolator = new Object();
     public static final Object MARKER_cacheLike_flatCache = new Object();
     public static final Object MARKER_cacheLike_cache2d = new Object();
+    public static final Object MARKER_delegate_flatCache = new Object();
 
     private static final AtomicLong ordinal = new AtomicLong();
 
@@ -135,6 +139,8 @@ public class OpenCLCGen {
                 original.getFlatCachePrefills(),
                 original.getCache2dPrefills(),
                 original.getInterpolatorPrefills(),
+                original.getDelegateFlatCachePrefills(),
+                original.getDelegateNodes(),
                 original.getDefines(),
                 original.getBiomeMappings(),
                 path
@@ -167,6 +173,7 @@ public class OpenCLCGen {
         private final ArrayList<CacheLikeNode> flatCaches = new ArrayList<>();
         private final ArrayList<CacheLikeNode> interpolators = new ArrayList<>();
         private final ArrayList<CacheLikeNode> cache2ds = new ArrayList<>();
+        private final ArrayList<DelegateNode> delegateFlatCaches = new ArrayList<>();
         private final Object2ReferenceOpenHashMap<String, String> defines = new Object2ReferenceOpenHashMap<>();
         private final Random rng = new Random(1234);
         private RegistryEntry<Biome>[] biomeMappings = null;
@@ -197,6 +204,7 @@ public class OpenCLCGen {
             this.allocGlobalDynamicData(MARKER_cacheLike_flatCache);
             this.allocGlobalDynamicData(MARKER_cacheLike_cache2d);
             this.allocGlobalDynamicData(MARKER_cacheLike_interpolator);
+            this.allocGlobalDynamicData(MARKER_delegate_flatCache);
         }
 
         private int methodIdx = 0;
@@ -359,6 +367,13 @@ public class OpenCLCGen {
             return index;
         }
 
+        @Override
+        public int registerDelegateFlatCache(DelegateNode node) {
+            int index = this.delegateFlatCaches.size();
+            this.delegateFlatCaches.add(node);
+            return index;
+        }
+
         public void genNoiseKernels() {
             final ArrayList<String> flatCachePrefills = new ArrayList<>();
             final ArrayList<String> interpolatorPrefills = new ArrayList<>();
@@ -387,6 +402,30 @@ public class OpenCLCGen {
                             .append("    ").append("const double result = ").append(delegateName).append("(make_sample_int32_ctx(const_data, NULL, math_biome2block(offsetX + params->startBiomeX), 0, math_biome2block(offsetZ + params->startBiomeZ), 0));\n")
                             .append("    ").append("data[index] = result;\n")
                             .append("    ").append("if (extra_out) extra_out[index] = result;\n")
+                            .append("}\n");
+
+                    flatCachePrefills.add(name);
+                }
+            }
+
+            {
+                ArrayList<DelegateNode> caches = this.delegateFlatCaches;
+                int offset = this.getGlobalDynamicDataOffset(MARKER_delegate_flatCache);
+                int delegateCacheIndexBase = this.flatCaches.size();
+                for (int i = 0, cachesSize = caches.size(); i < cachesSize; i++) {
+                    DelegateNode node = caches.get(i);
+                    String name = "df_delegate_flatcache_prefill_" + i;
+
+                    // this kernel is a placeholder - the actual values are computed on the CPU side
+                    this.pendingSource
+                            .append("static void ").append(name).append("(global const void * restrict const const_data, global void * restrict const rw_data, global double * restrict const extra_out) {\n")
+                            .append("    ").append("global const worldgen_params_t * restrict params = rw_data;\n")
+                            .append("    ").append("global double * restrict data = df_data_offset_global(rw_data, ").append(offset).append(");\n")
+                            .append("    ").append("int32_t offsetX = get_global_id(0);\n")
+                            .append("    ").append("int32_t offsetZ = get_global_id(1);\n")
+                            .append("    ").append("uint32_t index = df_address_flatcache_buffer(params, ").append(i).append(", offsetX, offsetZ);\n")
+                            .append("    ").append("data[index] = 0.0;\n")
+                            .append("    ").append("if (extra_out) extra_out[df_address_flatcache_buffer(params, ").append(delegateCacheIndexBase + i).append(", offsetX, offsetZ)] = 0.0;\n")
                             .append("}\n");
 
                     flatCachePrefills.add(name);
@@ -589,6 +628,8 @@ public class OpenCLCGen {
 
         public GeneratedCLSource build() {
             Assertions.assertTrue(this.localOffsetTableOffset == 0);
+            DensityFunction[] delegateNodesArray = this.delegateFlatCaches.isEmpty() ? null :
+                    this.delegateFlatCaches.stream().map(DelegateNode::getDelegate).toArray(DensityFunction[]::new);
             return new GeneratedCLSource(
                     ordinal.incrementAndGet(),
                     this.pendingSource.toString(),
@@ -597,6 +638,8 @@ public class OpenCLCGen {
                     this.flatCaches.size(),
                     this.cache2ds.size(),
                     this.interpolators.size(),
+                    this.delegateFlatCaches.size(),
+                    delegateNodesArray,
                     this.defines,
                     this.biomeMappings,
                     null
@@ -665,6 +708,139 @@ public class OpenCLCGen {
         }
     }
 
+    public static byte[] bytes(PerlinNoiseSampler sampler) {
+        try (Arena arena = Arena.ofConfined()) {
+            byte[] perm = ((IPerlinNoiseSampler) (Object) sampler).getPermutation();
+            int firstOctave;
+            double[] ampArray;
+            try {
+                // Access private fields via reflection
+                var fOctave = PerlinNoiseSampler.class.getDeclaredField("firstOctave");
+                fOctave.setAccessible(true);
+                firstOctave = fOctave.getInt(sampler);
+
+                var fAmps = PerlinNoiseSampler.class.getDeclaredField("amplitudes");
+                fAmps.setAccessible(true);
+                it.unimi.dsi.fastutil.doubles.DoubleList amps = (it.unimi.dsi.fastutil.doubles.DoubleList) fAmps.get(sampler);
+                ampArray = amps.toDoubleArray();
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to access PerlinNoiseSampler fields", e);
+            }
+            int octaveCount = ampArray.length;
+
+            // Layout: header (20 bytes) + permutation (256 bytes) + amplitudes (octaveCount * 8 bytes)
+            int headerSize = 20; // uint64_t(8) + int32_t(4) + int32_t(4) + int32_t(4)
+            int permOffset = headerSize;
+            int ampOffset = headerSize + 256;
+            int totalSize = headerSize + 256 + octaveCount * 8;
+
+            MemorySegment memorySegment = arena.allocate(totalSize, 64);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, 0, octaveCount);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 8, firstOctave);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 12, permOffset);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 16, ampOffset);
+
+            for (int i = 0; i < 256; i++) {
+                memorySegment.set(ValueLayout.JAVA_BYTE, permOffset + i, perm[i]);
+            }
+            for (int i = 0; i < octaveCount; i++) {
+                memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, ampOffset + i * 8, ampArray[i]);
+            }
+
+            byte[] bytes = new byte[totalSize];
+            MemorySegment.copy(memorySegment, ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
+            return bytes;
+        }
+    }
+
+    public static byte[] bytesPerlinNoise(Object noise) {
+        try (Arena arena = Arena.ofConfined()) {
+            var cls = noise.getClass();
+            var fNoiseLevels = cls.getDeclaredField("noiseLevels");
+            fNoiseLevels.setAccessible(true);
+            Object[] noiseLevels = (Object[]) fNoiseLevels.get(noise);
+
+            var fAmps = cls.getDeclaredField("amplitudes");
+            fAmps.setAccessible(true);
+            var amps = (it.unimi.dsi.fastutil.doubles.DoubleList) fAmps.get(noise);
+
+            var fLfvf = cls.getDeclaredField("lowestFreqValueFactor");
+            fLfvf.setAccessible(true);
+            double lowestFreqValueFactor = fLfvf.getDouble(noise);
+
+            var fLfif = cls.getDeclaredField("lowestFreqInputFactor");
+            fLfif.setAccessible(true);
+            double lowestFreqInputFactor = fLfif.getDouble(noise);
+
+            int octaveCount = amps.size();
+
+            // Count non-null noise levels
+            int nonNullCount = 0;
+            for (Object nl : noiseLevels) {
+                if (nl != null) nonNullCount++;
+            }
+
+            // Layout: header (40 bytes) + permutations (nonNullCount * 256 bytes) + origins (nonNullCount * 3 * 8 bytes) + amplitudes (nonNullCount * 8 bytes)
+            // header: uint64_t octaveCount(8) + int32_t permutations_offset(4) + int32_t originX_offset(4) + int32_t originY_offset(4) + int32_t originZ_offset(4) + int32_t amplitudes_offset(4) + double lfvf(8) + double lfif(8)
+            int headerSize = 48;
+            int permOffset = headerSize;
+            int permSize = nonNullCount * 256;
+            int originXOffset = permOffset + permSize;
+            int originYOffset = originXOffset + nonNullCount * 8;
+            int originZOffset = originYOffset + nonNullCount * 8;
+            int ampOffset = originZOffset + nonNullCount * 8;
+            int totalSize = ampOffset + nonNullCount * 8;
+
+            MemorySegment memorySegment = arena.allocate(totalSize, 64);
+            memorySegment.set(ValueLayout.JAVA_LONG_UNALIGNED, 0, nonNullCount);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 8, permOffset);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 12, originXOffset);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 16, originYOffset);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 20, originZOffset);
+            memorySegment.set(ValueLayout.JAVA_INT_UNALIGNED, 24, ampOffset);
+            memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, 32, lowestFreqValueFactor);
+            memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, 40, lowestFreqInputFactor);
+
+            // ImprovedNoise fields: p (byte[256]), xo, yo, zo (double)
+            var improvedNoiseCls = Class.forName("net.minecraft.world.level.levelgen.synth.ImprovedNoise");
+            var fP = improvedNoiseCls.getDeclaredField("p");
+            fP.setAccessible(true);
+            var fXo = improvedNoiseCls.getDeclaredField("xo");
+            fXo.setAccessible(true);
+            var fYo = improvedNoiseCls.getDeclaredField("yo");
+            fYo.setAccessible(true);
+            var fZo = improvedNoiseCls.getDeclaredField("zo");
+            fZo.setAccessible(true);
+
+            int permIdx = 0;
+            for (int i = 0; i < octaveCount; i++) {
+                Object nl = noiseLevels[i];
+                if (nl == null) continue;
+
+                byte[] perm = (byte[]) fP.get(nl);
+                double xo = fXo.getDouble(nl);
+                double yo = fYo.getDouble(nl);
+                double zo = fZo.getDouble(nl);
+
+                for (int j = 0; j < 256; j++) {
+                    memorySegment.set(ValueLayout.JAVA_BYTE, permOffset + permIdx * 256 + j, perm[j]);
+                }
+                memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, originXOffset + permIdx * 8, xo);
+                memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, originYOffset + permIdx * 8, yo);
+                memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, originZOffset + permIdx * 8, zo);
+                memorySegment.set(ValueLayout.JAVA_DOUBLE_UNALIGNED, ampOffset + permIdx * 8, amps.getDouble(i));
+
+                permIdx++;
+            }
+
+            byte[] bytes = new byte[totalSize];
+            MemorySegment.copy(memorySegment, ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
+            return bytes;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize PerlinNoise", e);
+        }
+    }
+
     public static byte[] bytes(int[] ints) {
         byte[] bytes = new byte[ints.length * Integer.BYTES];
         MemorySegment.copy(MemorySegment.ofArray(ints), ValueLayout.JAVA_BYTE, 0, bytes, 0, bytes.length);
@@ -681,9 +857,15 @@ public class OpenCLCGen {
         return switch (object) {
             case InterpolatedNoiseSampler sampler -> bytes(sampler);
             case DoublePerlinNoiseSampler sampler -> bytes(sampler);
+            case PerlinNoiseSampler sampler -> bytes(sampler);
             case int[] ints -> bytes(ints);
             case float[] floats -> bytes(floats);
-            default -> throw new UnsupportedOperationException(object.getClass().getName());
+            default -> {
+                if (object.getClass().getName().equals("net.minecraft.world.level.levelgen.synth.PerlinNoise")) {
+                    yield bytesPerlinNoise(object);
+                }
+                throw new UnsupportedOperationException(object.getClass().getName());
+            }
         };
     }
 

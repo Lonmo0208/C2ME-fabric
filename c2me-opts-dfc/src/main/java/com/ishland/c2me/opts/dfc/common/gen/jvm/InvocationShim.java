@@ -56,4 +56,12 @@ public class InvocationShim {
         return MathHelper.floor(value);
     }
 
+    public static double invokePerlinNoiseSample(Object noise, double x, double y, double z) {
+        try {
+            return (double) noise.getClass().getMethod("getValue", double.class, double.class, double.class).invoke(noise, x, y, z);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to invoke PerlinNoise.getValue()", e);
+        }
+    }
+
 }

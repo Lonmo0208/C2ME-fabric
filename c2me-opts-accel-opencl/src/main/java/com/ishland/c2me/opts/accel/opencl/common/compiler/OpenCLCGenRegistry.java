@@ -26,25 +26,32 @@ import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.DFTWeird
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.EndIslandsNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.FindTopSurfaceNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.GenericShiftedNoiseNodeOpenCLCEmitter;
+import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.SinglePerlinNoiseNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.InterpolatedNoiseSamplerNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.RangeChoiceNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.RootNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.SplineAstNodeOpenCLCEmitter;
 import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.YClampedGradientNodeOpenCLCEmitter;
+import com.ishland.c2me.opts.accel.opencl.common.compiler.emitters.misc.TwilightForestOpenCLCEmitters;
 import com.ishland.c2me.opts.dfc.common.ast.AstNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.BeardifierNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.BoxDensityNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CacheLikeNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.ConstantNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CoordinateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.DelegateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.EndIslandsNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.FindTopSurfaceNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.FocusedDensityNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.HollowHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.InterpolatedNoiseSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RangeChoiceNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RootNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.TanhHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.YClampedGradientNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.DFTWeirdScaledSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.GenericShiftedNoiseNode;
+import com.ishland.c2me.opts.dfc.common.ast.noise.SinglePerlinNoiseNode;
 import com.ishland.c2me.opts.dfc.common.ast.spline.SplineAstNode;
 import com.ishland.c2me.opts.dfc.common.gen.opencl.OpenCLCEmitter;
 import com.ishland.c2me.opts.dfc.common.gen.opencl.OpenCLCGenData;
@@ -63,14 +70,19 @@ public class OpenCLCGenRegistry {
         OpenCLCGenData.REGISTRY.registerExactMatch(EndIslandsNode.class, EndIslandsNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(FindTopSurfaceNode.class, FindTopSurfaceNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(GenericShiftedNoiseNode.class, GenericShiftedNoiseNodeOpenCLCEmitter.INSTANCE);
+        OpenCLCGenData.REGISTRY.registerExactMatch(SinglePerlinNoiseNode.class, SinglePerlinNoiseNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(InterpolatedNoiseSamplerNode.class, InterpolatedNoiseSamplerNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(RangeChoiceNode.class, RangeChoiceNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(RootNode.class, RootNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(SplineAstNode.class, SplineAstNodeOpenCLCEmitter.INSTANCE);
         OpenCLCGenData.REGISTRY.registerExactMatch(YClampedGradientNode.class, YClampedGradientNodeOpenCLCEmitter.INSTANCE);
 
+        TwilightForestOpenCLCEmitters.register(OpenCLCGenData.REGISTRY);
+
         OpenCLCGenData.REGISTRY.registerExactMatch(DelegateNode.class, (OpenCLCEmitter<DelegateNode>) (node, context) -> {
-            throw new UnsupportedOperationException(String.format("Unsupported density function type: %s", node.getDelegate().getClass()));
+            throw new UnsupportedOperationException(
+                    String.format("Unsupported density function type: %s (this dimension will fall back to CPU-based terrain generation)",
+                            node.getDelegate().getClass()));
         });
     }
 

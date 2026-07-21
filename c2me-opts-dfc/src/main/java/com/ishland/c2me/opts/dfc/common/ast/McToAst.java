@@ -41,16 +41,22 @@ import com.ishland.c2me.opts.dfc.common.ast.misc.CoordinateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.DelegateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.EndIslandsNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.FindTopSurfaceNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.FocusedDensityNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.HollowHillNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.BoxDensityNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.TanhHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.InterpolatedNoiseSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RangeChoiceNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.YClampedGradientNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.DFTWeirdScaledSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.GenericShiftedNoiseNode;
+import com.ishland.c2me.opts.dfc.common.ast.noise.SinglePerlinNoiseNode;
 import com.ishland.c2me.opts.dfc.common.ast.opto.OptoPasses;
 import com.ishland.c2me.opts.dfc.common.ast.spline.SplineAstNode;
 import com.ishland.c2me.opts.dfc.common.ast.unary.AbsNode;
 import com.ishland.c2me.opts.dfc.common.ast.unary.CubeNode;
 import com.ishland.c2me.opts.dfc.common.ast.unary.NegMulNode;
+import com.ishland.c2me.opts.dfc.common.ast.unary.SqrtNode;
 import com.ishland.c2me.opts.dfc.common.ast.unary.SquareNode;
 import com.ishland.c2me.opts.dfc.common.ast.unary.SqueezeNode;
 import com.ishland.c2me.opts.dfc.common.ducks.IFastCacheLike;
@@ -171,7 +177,37 @@ public class McToAst {
             case InterpolatedNoiseSampler f -> new InterpolatedNoiseSamplerNode(f);
             case DensityFunctionTypes.Beardifier f -> new BeardifierNode(f);
 
+            // Aether II PerlinNoiseFunction integration
             default -> {
+                if (df.getClass().getName().equals("com.aetherteam.aetherii.world.density.PerlinNoiseFunction")) {
+                    try {
+                        var cls = df.getClass();
+                        var noise = cls.getField("noise").get(df);
+                        var xzScaleField = cls.getDeclaredField("xzScale");
+                        xzScaleField.setAccessible(true);
+                        var xzScale = xzScaleField.getDouble(df);
+                        var yScaleField = cls.getDeclaredField("yScale");
+                        yScaleField.setAccessible(true);
+                        var yScale = yScaleField.getDouble(df);
+                        // PerlinNoiseFunction has lazy initialization - use fakeNoise as fallback (private field)
+                        if (noise == null) {
+                            var fakeNoiseField = cls.getDeclaredField("fakeNoise");
+                            fakeNoiseField.setAccessible(true);
+                            noise = fakeNoiseField.get(df);
+                        }
+                        if (noise != null) {
+                            yield new SinglePerlinNoiseNode(
+                                    new MulNode(CoordinateNode.AXIS_X, new ConstantNode(xzScale)),
+                                    new MulNode(CoordinateNode.AXIS_Y, new ConstantNode(yScale)),
+                                    new MulNode(CoordinateNode.AXIS_Z, new ConstantNode(xzScale)),
+                                    noise
+                            );
+                        }
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to parse PerlinNoiseFunction", e);
+                    }
+                }
+
                 if (Config.enableBuiltinIntegrations) {
                     {
                         AstNode node = ConfigClampBindings.tryParse(df);
@@ -184,12 +220,132 @@ public class McToAst {
                     }
                 }
 
+                // Twilight Forest integrations
+                {
+                    AstNode node = tryParseTwilightForest(df);
+                    if (node != null) yield node;
+                }
+
                 long known = delegateStatistics.computeIfAbsent(df.getClass(), unused -> new AtomicLong(0L)).getAndIncrement();
                 if (known == 0) {
                     LOGGER.warn("warn_once: Generating DelegateNode for type: {}", df.getClass().toString());
                 }
                 yield new DelegateNode(df);
             }
+        };
+
+    }
+
+    private static AstNode tryParseTwilightForest(DensityFunction df) {
+        String className = df.getClass().getName();
+        return switch (className) {
+            case "twilightforest.world.components.chunkgenerators.SqrtDensityFunction" -> {
+                try {
+                    var cls = df.getClass();
+                    var input = (DensityFunction) cls.getField("input").get(df);
+                    yield new SqrtNode(toAst(input));
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            case "twilightforest.world.components.chunkgenerators.FocusedDensityFunction" -> {
+                try {
+                    var cls = df.getClass();
+                    double centerX = cls.getField("centerX").getDouble(df);
+                    double bottomY = cls.getField("bottomY").getDouble(df);
+                    double centerZ = cls.getField("centerZ").getDouble(df);
+                    double radius = cls.getField("radius").getDouble(df);
+                    double nearValue = cls.getField("nearValue").getDouble(df);
+                    double farValue = cls.getField("farValue").getDouble(df);
+                    yield new FocusedDensityNode(df, centerX, bottomY, centerZ, radius, nearValue, farValue);
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            case "twilightforest.world.components.chunkgenerators.HollowHillFunction" -> {
+                try {
+                    var cls = df.getClass();
+                    double centerX = cls.getField("centerX").getDouble(df);
+                    double bottomY = cls.getField("bottomY").getDouble(df);
+                    double centerZ = cls.getField("centerZ").getDouble(df);
+                    double radius = cls.getField("radius").getDouble(df);
+                    double heightScale = cls.getField("heightScale").getDouble(df);
+                    yield new HollowHillNode(df, centerX, bottomY, centerZ, radius, heightScale);
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            case "twilightforest.world.components.chunkgenerators.TanhHillFunction" -> {
+                try {
+                    var cls = df.getClass();
+                    double centerX = cls.getField("centerX").getDouble(df);
+                    double bottomY = cls.getField("bottomY").getDouble(df);
+                    double centerZ = cls.getField("centerZ").getDouble(df);
+                    double radius = cls.getField("radius").getDouble(df);
+                    double heightScale = cls.getField("heightScale").getDouble(df);
+                    double cosAngleBiasDirection = cls.getField("cosAngleBiasDirection").getDouble(df);
+                    double sinAngleBiasDirection = cls.getField("sinAngleBiasDirection").getDouble(df);
+                    boolean isXOriented = cls.getField("isXOriented").getBoolean(df);
+                    boolean isOnRightSide = cls.getField("isOnRightSide").getBoolean(df);
+                    yield new TanhHillNode(df, centerX, bottomY, centerZ, radius, heightScale, cosAngleBiasDirection, sinAngleBiasDirection, isXOriented, isOnRightSide);
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            case "twilightforest.world.components.chunkgenerators.BoxDensityFunction" -> {
+                try {
+                    var cls = df.getClass();
+                    double minX = cls.getField("minX").getDouble(df);
+                    double minY = cls.getField("minY").getDouble(df);
+                    double minZ = cls.getField("minZ").getDouble(df);
+                    double maxX = cls.getField("maxX").getDouble(df);
+                    double maxY = cls.getField("maxY").getDouble(df);
+                    double maxZ = cls.getField("maxZ").getDouble(df);
+                    double minValue = cls.getField("minValue").getDouble(df);
+                    double maxValue = cls.getField("maxValue").getDouble(df);
+                    double terrainAdjustment = cls.getField("terrainAdjustment").getDouble(df);
+                    yield new BoxDensityNode(df, minX, minY, minZ, maxX, maxY, maxZ, minValue, maxValue, terrainAdjustment);
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            case "twilightforest.world.components.chunkgenerators.AbsoluteDifferenceFunction$Min" -> {
+                try {
+                    var cls = df.getClass();
+                    double max = cls.getField("max").getDouble(df);
+                    double centerX = cls.getField("centerX").getDouble(df);
+                    double centerZ = cls.getField("centerZ").getDouble(df);
+                    // Math.min(max, Math.max(Math.abs(x - centerX), Math.abs(z - centerZ)))
+                    yield new MinNode(
+                            new ConstantNode(max),
+                            new MaxNode(
+                                    new AbsNode(new AddNode(CoordinateNode.AXIS_X, new ConstantNode(-centerX))),
+                                    new AbsNode(new AddNode(CoordinateNode.AXIS_Z, new ConstantNode(-centerZ)))
+                            )
+                    );
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            case "twilightforest.world.components.chunkgenerators.AbsoluteDifferenceFunction$Max" -> {
+                try {
+                    var cls = df.getClass();
+                    double max = cls.getField("max").getDouble(df);
+                    double centerX = cls.getField("centerX").getDouble(df);
+                    double centerZ = cls.getField("centerZ").getDouble(df);
+                    // Math.min(max, Math.max(Math.abs(x - centerX), Math.abs(z - centerZ)))
+                    yield new MinNode(
+                            new ConstantNode(max),
+                            new MaxNode(
+                                    new AbsNode(new AddNode(CoordinateNode.AXIS_X, new ConstantNode(-centerX))),
+                                    new AbsNode(new AddNode(CoordinateNode.AXIS_Z, new ConstantNode(-centerZ)))
+                            )
+                    );
+                } catch (Exception e) {
+                    yield null;
+                }
+            }
+            default -> null;
         };
     }
 

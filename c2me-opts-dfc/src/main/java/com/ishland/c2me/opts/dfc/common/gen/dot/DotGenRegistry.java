@@ -26,19 +26,25 @@ package com.ishland.c2me.opts.dfc.common.gen.dot;
 
 import com.ishland.c2me.opts.dfc.common.ast.AstNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.BeardifierNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.BoxDensityNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CacheLikeNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.ConstantNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CoordinateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.DelegateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.EndIslandsNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.FindTopSurfaceNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.FocusedDensityNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.HollowHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.InterpolatedNoiseSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RangeChoiceNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RootNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.TanhHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.YClampedGradientNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.DFTWeirdScaledSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.GenericShiftedNoiseNode;
+import com.ishland.c2me.opts.dfc.common.ast.noise.SinglePerlinNoiseNode;
 import com.ishland.c2me.opts.dfc.common.ast.spline.SplineAstNode;
+import com.ishland.c2me.opts.dfc.common.ast.unary.SqrtNode;
 import com.ishland.c2me.opts.dfc.common.gen.CodeGenRegistry;
 import com.ishland.c2me.opts.dfc.common.gen.dot.emitters.BinaryNodeDotEmitters;
 import com.ishland.c2me.opts.dfc.common.gen.dot.emitters.UnaryNodeDotEmitters;
@@ -186,6 +192,58 @@ public class DotGenRegistry {
                             .tooltip(sb.toString())
                             .build();
                 }
+        );
+        REGISTRY.registerExactMatch(
+                SinglePerlinNoiseNode.class,
+                (DotEmitter<SinglePerlinNoiseNode>) (node, context, builder) ->
+                        builder
+                                .hexagonShape()
+                                .label("SinglePerlinNoise")
+                                .edge(context.generate(node.inputX)).label("inputX").finish()
+                                .edge(context.generate(node.inputY)).label("inputY").finish()
+                                .edge(context.generate(node.inputZ)).label("inputZ").finish()
+                                .build()
+        );
+        REGISTRY.registerExactMatch(
+                SqrtNode.class,
+                (DotEmitter<SqrtNode>) (node, context, builder) ->
+                        builder
+                                .boxShape()
+                                .label("sqrt")
+                                .edge(context.generate(node.operand)).label("operand").finish()
+                                .build()
+        );
+        REGISTRY.registerExactMatch(
+                BoxDensityNode.class,
+                (DotEmitter<BoxDensityNode>) (node, context, builder) ->
+                        builder
+                                .trapeziumShape()
+                                .label("BoxDensity")
+                                .build()
+        );
+        REGISTRY.registerExactMatch(
+                HollowHillNode.class,
+                (DotEmitter<HollowHillNode>) (node, context, builder) ->
+                        builder
+                                .trapeziumShape()
+                                .label("HollowHill")
+                                .build()
+        );
+        REGISTRY.registerExactMatch(
+                FocusedDensityNode.class,
+                (DotEmitter<FocusedDensityNode>) (node, context, builder) ->
+                        builder
+                                .trapeziumShape()
+                                .label("FocusedDensity")
+                                .build()
+        );
+        REGISTRY.registerExactMatch(
+                TanhHillNode.class,
+                (DotEmitter<TanhHillNode>) (node, context, builder) ->
+                        builder
+                                .trapeziumShape()
+                                .label("TanhHill")
+                                .build()
         );
     }
 

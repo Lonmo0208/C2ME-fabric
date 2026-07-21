@@ -26,18 +26,23 @@ package com.ishland.c2me.opts.dfc.common.gen.jvm;
 
 import com.ishland.c2me.opts.dfc.common.ast.AstNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.BeardifierNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.BoxDensityNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CacheLikeNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.ConstantNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.CoordinateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.DelegateNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.EndIslandsNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.FindTopSurfaceNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.FocusedDensityNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.HollowHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.InterpolatedNoiseSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RangeChoiceNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.RootNode;
+import com.ishland.c2me.opts.dfc.common.ast.misc.TanhHillNode;
 import com.ishland.c2me.opts.dfc.common.ast.misc.YClampedGradientNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.DFTWeirdScaledSamplerNode;
 import com.ishland.c2me.opts.dfc.common.ast.noise.GenericShiftedNoiseNode;
+import com.ishland.c2me.opts.dfc.common.ast.noise.SinglePerlinNoiseNode;
 import com.ishland.c2me.opts.dfc.common.ast.spline.SplineAstNode;
 import com.ishland.c2me.opts.dfc.common.gen.CodeGenRegistry;
 import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.BinaryNodeBytecodeEmitters;
@@ -51,6 +56,7 @@ import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.FindTopSurfaceNode
 import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.GenericShiftedNoiseNodeBytecodeEmitter;
 import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.RangeChoiceNodeBytecodeEmitter;
 import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.RootNodeBytecodeEmitter;
+import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.SinglePerlinNoiseNodeBytecodeEmitter;
 import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.SplineAstNodeBytecodeEmitter;
 import com.ishland.c2me.opts.dfc.common.gen.jvm.emitters.misc.YClampedGradientNodeBytecodeEmitter;
 import org.objectweb.asm.commons.InstructionAdapter;
@@ -73,11 +79,16 @@ public class BytecodeGenRegistry {
         REGISTRY.registerExactMatch(YClampedGradientNode.class, YClampedGradientNodeBytecodeEmitter.INSTANCE);
         REGISTRY.registerExactMatch(DFTWeirdScaledSamplerNode.class, DFTWeirdScaledSamplerNodeBytecodeEmitter.INSTANCE);
         REGISTRY.registerExactMatch(SplineAstNode.class, SplineAstNodeBytecodeEmitter.INSTANCE);
+        REGISTRY.registerExactMatch(SinglePerlinNoiseNode.class, SinglePerlinNoiseNodeBytecodeEmitter.INSTANCE);
 
         REGISTRY.registerExactMatch(DelegateNode.class, DelegateNodeBytecodeEmitter.instance());
         REGISTRY.registerExactMatch(BeardifierNode.class, DelegateNodeBytecodeEmitter.instance());
         REGISTRY.registerExactMatch(EndIslandsNode.class, DelegateNodeBytecodeEmitter.instance());
         REGISTRY.registerExactMatch(InterpolatedNoiseSamplerNode.class, DelegateNodeBytecodeEmitter.instance());
+        REGISTRY.registerExactMatch(FocusedDensityNode.class, DelegateNodeBytecodeEmitter.instance());
+        REGISTRY.registerExactMatch(HollowHillNode.class, DelegateNodeBytecodeEmitter.instance());
+        REGISTRY.registerExactMatch(TanhHillNode.class, DelegateNodeBytecodeEmitter.instance());
+        REGISTRY.registerExactMatch(BoxDensityNode.class, DelegateNodeBytecodeEmitter.instance());
     }
 
     public static <T extends AstNode> void doBytecodeGenSingle(T node, BytecodeGen.Context context, InstructionAdapter m, BytecodeGen.Context.LocalVarConsumer localVarConsumer) {
